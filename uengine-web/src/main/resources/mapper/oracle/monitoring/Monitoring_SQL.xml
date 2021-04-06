@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+ 
+<mapper namespace="monitoring">
+     
+    <select id="selectNewWorkStatus" resultType="MonitoringVO">
+        <![CDATA[
+            SELECT 
+			    TO_CHAR(INST.STARTEDDATE,'YYYY-MM-DD hh:mm:ss') AS STARTEDDATE,
+				INST.DEFNAME,
+				COUNT(1) AS TOTALCOUNT 
+			FROM BPM_PROCINST INST
+			INNER JOIN BPM_WORKLIST WL ON WL.INSTID = INST.INSTID
+			WHERE INST.STATUS = 'Running'
+				AND INST.ISDELETED = 0
+				AND INST.ISSUBPROCESS = 0
+				AND WL.STATUS IN ('NEW','CONFIRMED','DRAFT')
+				AND SYSDATE-7 <= INST.STARTEDDATE AND INST.STARTEDDATE <= SYSDATE-1 
+			GROUP BY TO_CHAR(INST.STARTEDDATE,'YYYY-MM-DD hh:mm:ss'), INST.DEFNAME
+        ]]>
+    </select>
+    <select id="selectProgressStatusByTask" resultType="MonitoringVO">
+        <![CDATA[
+          SELECT 
+			INST.DEFNAME, 		
+			COUNT(1) AS TOTALCOUNT 
+		FROM BPM_PROCINST INST
+		WHERE INST.STATUS = 'Running'
+			AND INST.ISDELETED = 0
+			AND INST.ISSUBPROCESS = 0
+		GROUP BY INST.DEFNAME
+        ]]>
+    </select>
+	<select id="selectProcessingDelayStatusByTask" resultType="MonitoringVO">
+        <![CDATA[
+          SELECT 
+			INST.DEFNAME,
+			NVL(COUNT(CASE WHEN DUEDATE <= FINISHEDDATE THEN 1 END),0) AS DELAYEDCOUNT
+		FROM BPM_PROCINST INST
+		INNER JOIN BPM_PROCDEF DEF ON INST.DEFID = DEF.DEFID 
+		WHERE INST.STATUS = 'Completed'
+			AND INST.ISDELETED = 0
+			AND INST.ISSUBPROCESS = 0
+			AND DEF.OBJTYPE = 'process'
+		GROUP BY INST.DEFNAME
+        ]]>
+    </select>
+    <select id="selectTaskCompletedAverageTime" resultType="MonitoringVO">
+        <![CDATA[
+          SELECT 
+			INST.DEFNAME,
+			TO_CHAR(INST.FINISHEDDATE,'YYYY-MM-DD hh:mm:ss') AS FINISHEDDATE,
+			TO_CHAR(AVG(INST.FINISHEDDATE - INST.STARTEDDATE)+1) AS WORKINGDAYAVG
+		  FROM BPM_PROCINST INST
+		  WHERE INST.STATUS = 'Completed'
+			AND INST.ISDELETED = 0
+			AND INST.ISSUBPROCESS = 0
+		  GROUP BY INST.DEFNAME, TO_CHAR(INST.FINISHEDDATE,'YYYY-MM-DD hh:mm:ss')
+        ]]>
+    </select>
+    <select id="selectProcessingStatusByTask" resultType="MonitoringVO" parameterType="hashmap">
+        <![CDATA[
+	    SELECT 
+			part.partname,
+			def.path,
+			NVL(ROUND(AVG((finisheddate-starteddate)+1),0),0) AS workingDayAVG,
+			NVL(MIN(DISTINCT((finisheddate-starteddate)+1)),0) AS workingDayMIN,
+			NVL(MAX(DISTINCT((finisheddate-starteddate)+1)),0) AS workingDayMAX,
+			COUNT(1) AS totalCOUNT
+		FROM bpm_procinst inst
+		INNER JOIN 
+			(SELECT prodverid, parentfolder, defid, name, SYS_CONNECT_BY_PATH(name,'>') AS path, level, CONNECT_BY_ROOT name AS parentname
+			FROM bpm_procdef
+			WHERE objtype = 'process'
+			AND isdeleted = 0
+			START WITH parentfolder = -1
+			CONNECT BY PRIOR defid = parentfolder) def ON inst.defid = def.defid
+		INNER JOIN emptable emp ON emp.empcode = inst.initep AND emp.isdeleted = 0
+		INNER JOIN parttable part ON part.partcode = emp.partcode AND part.isdeleted = 0
+		WHERE inst.status = 'Completed'
+			AND inst.isdeleted = 0
+			AND inst.issubprocess = 0
+			]]>
+		<if test="partCode != null">
+        <![CDATA[                                               
+			AND part.partcode = #{partCode}          
+		]]>
+        </if>
+        <if test="searchFromDate != null and searchToDate != null">
+        <![CDATA[                                               
+			AND #{searchFromDate} <= TO_CHAR(finisheddate,'YYYY-MM-DD') AND TO_CHAR(finisheddate,'YYYY-MM-DD') <= #{searchToDate}  
+		]]>
+        </if>
+         <![CDATA[  
+		GROUP BY part.partname, def.path
+		]]>
+	</select>
+	<select id="selectprocessingstatusbyuser" resultType="MonitoringVO" parameterType="hashmap">
+	<![CDATA[ 
+		SELECT 
+			emp.empname,
+			NVL(COUNT(DISTINCT CASE WHEN duedate > finisheddate THEN inst.instid END),0) AS passedCOUNT ,
+			CASE WHEN ROUND(AVG((finisheddate-starteddate)+1),0) < 0 THEN 0 ELSE NVL(ROUND(AVG((finisheddate-starteddate)+1),0),0) END  AS passedDayAVG,
+			NVL(COUNT(DISTINCT CASE WHEN duedate <= finisheddate THEN inst.instid END),0) AS delayedCOUNT
+		FROM
+			bpm_procinst inst
+			INNER JOIN bpm_rolemapping rm ON rm.rootinstid = inst.instid 
+			INNER JOIN emptable emp ON emp.empcode = rm.endpoint AND emp.isdeleted = 0
+			INNER JOIN parttable part ON part.partcode = emp.partcode AND part.isdeleted = 0
+		WHERE
+			status = 'Completed'
+			AND inst.isdeleted = 0
+			AND inst.issubprocess = 0
+			AND part.partcode = #{partCode}			         			                                               
+			AND #{searchFromDate} <= TO_CHAR(finisheddate,'YYYY-MM-DD') AND TO_CHAR(finisheddate,'YYYY-MM-DD') <= #{searchToDate}  
+			GROUP BY emp.empname
+		]]>
+		</select>
+		<select id="selectprocessingdelaystatus" resultType="MonitoringVO" parameterType="hashmap">
+        <![CDATA[
+	    SELECT 
+			inst.defname,
+			NVL(COUNT(CASE WHEN duedate > finisheddate THEN 1 END),0) AS passedCOUNT ,
+			NVL(COUNT(CASE WHEN duedate <= finisheddate THEN 1 END),0) AS delayedCOUNT,
+		    CASE WHEN ROUND(AVG((finisheddate-duedate)+1),0) < 0 THEN 0 ELSE NVL(ROUND(AVG((finisheddate-duedate)+1),0),0) END  AS delayedDayAVG
+		FROM bpm_procinst inst
+		INNER JOIN emptable emp ON emp.empcode = inst.initep AND emp.isdeleted = 0
+		INNER JOIN parttable part ON part.partcode = emp.partcode AND part.isdeleted = 0
+		WHERE inst.status = 'Completed'
+			AND inst.isdeleted = 0
+			AND inst.issubprocess = 0
+			]]>
+		<if test="partCode != null">
+        <![CDATA[                                               
+			AND part.partcode = #{partCode}          
+		]]>
+        </if>
+         <![CDATA[
+         	AND #{searchFromDate} <= TO_CHAR(finisheddate,'YYYY-MM-DD') AND TO_CHAR(finisheddate,'YYYY-MM-DD') <= #{searchToDate}  
+		GROUP BY inst.defname
+		]]>
+	</select>
+</mapper>

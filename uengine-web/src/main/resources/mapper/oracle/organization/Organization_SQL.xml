@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+ 
+<mapper namespace="organization">
+
+	<select id="selectOrganizationRootNode" parameterType="String" resultType="OrganizationVO">
+		<![CDATA[
+			SELECT 
+				CT.COMCODE, CT.COMNAME, CT.DESCRIPTION , COUNT(PT.GLOBALCOM ) CNT 
+			FROM COMTABLE  CT 
+			LEFT OUTER JOIN PARTTABLE PT ON PT.GLOBALCOM = CT.COMCODE              
+			AND PT.ISDELETED = '0' WHERE COMCODE = #{comCode} GROUP BY CT.COMCODE, CT.COMNAME, CT.DESCRIPTION
+		]]>
+	</select>
+     
+<!--     <select id="selectOrganizationTreeByComCode" parameterType="String" resultType="OrganizationVO">
+        <![CDATA[
+            SELECT LEVEL, CONNECT_BY_ISLEAF AS ISLEAF,
+			  P.PARTCODE, P.PARTNAME, P.DESCRIPTION
+			FROM (SELECT * FROM PARTTABLE WHERE ISDELETED='0' AND GLOBALCOM = #{comCode}) P
+			  START WITH P.PARENT_PARTCODE IS NULL
+			  CONNECT BY PRIOR P.PARTCODE   =P.PARENT_PARTCODE AND GLOBALCOM = #{comCode}
+			ORDER SIBLINGS BY P.PARTCODE
+        ]]>
+    </select> -->
+
+  	<select id="selectOrganizationTreeByComCode" parameterType="String" resultType="OrganizationVO">
+        <![CDATA[
+        	SELECT 
+        		P.GLOBALCOM, P.PARTCODE, P.PARTNAME,
+        		P.PARENT_PARTCODE, P.DESCRIPTION, P.ISDELETED
+        	FROM
+        		PARTTABLE P, COMTABLE C
+        	WHERE
+        		P.GLOBALCOM = C.COMCODE
+        	AND
+        		P.PARENT_PARTCODE = #{partCode}
+        ]]>
+    </select>
+
+<!--   	<select id="selectOrganizationTreeByComCode" parameterType="String" resultType="OrganizationVO">
+        <![CDATA[
+            select LEVEL, CONNECT_BY_ISLEAF AS ISLEAF, P.globalcom, P.PARTCODE, P.PARTNAME, P.parent_partcode, P.DESCRIPTION, P.isdeleted from
+            	(select 'demo' as globalcom, '0' as PARTCODE, 'demo' as PARTNAME, null as parent_partcode, 'demo' as DESCRIPTION, 0 as isdeleted FROM DUAL
+            		union 
+            	SELECT * FROM PARTTABLE WHERE ISDELETED='0' AND GLOBALCOM = 'demo') P
+            START WITH P.parent_partcode is null
+            CONNECT BY PRIOR P.partcode = P.parent_partcode AND GLOBALCOM = 'demo'
+        ]]>
+    </select> -->
+    
+<!--      	<select id="selectOrganizationTreeByComCode" parameterType="String" resultType="OrganizationVO">
+        <![CDATA[
+ select LEVEL, K.EMPNAME, K.EMPCODE, K.JIKNAME, K.PARTCODE, K.PARENT_PARTCODE, K.PARTNAME, K.DESCRIPTION, K.GLOBALCOM from
+ (
+ select null as empname, 'demo' as empcode, 'demo' as jikname, '0' as partcode, null as parent_partcode, 'demo' as partname, 'demo' as description, 'demo' as globalcom   
+ from dual union
+ select e.empname, e.empcode, e.jikname, p.partcode, p.parent_partcode, p.partname, p.description, p.globalcom from emptable e , parttable p  where p.GLOBALCOM = 'demo' and p.partcode = e.partcode) K
+START WITH parent_partcode is null
+CONNECT BY PRIOR partcode = parent_partcode AND GLOBALCOM = 'demo'
+        ]]>
+    </select> -->
+    
+	<select id ="checkUserListexist" parameterType="String" resultType="OrganizationVO" >
+		SELECT 
+			COUNT(GLOBALCOM)CNT
+		FROM 
+			EMPTABLE
+		WHERE 
+			PARTCODE = #{partCode}
+		GROUP BY GLOBALCOM
+	</select>
+
+	<select id="selectUserListByPartCode" parameterType="String" resultType="UserVO">
+        <![CDATA[
+        	SELECT 
+        		EMPNAME, EMPCODE, JIKNAME,
+        		PARTCODE, GLOBALCOM
+        	FROM
+        		EMPTABLE
+        	WHERE
+        		PARTCODE = #{partCode}
+        	ORDER BY EMPCODE
+        ]]>
+    </select>
+	
+	<!-- <select id="getCompanyInfo" parameterType="String" resultType="OrganizationVO">
+		SELECT 
+			C.COMCODE, C.COMNAME, C.DESCRIPTION
+		FROM
+			COMTABLE C, (SELECT GLOBALCOM FROM PARTTABLE WHERE PARTCODE = #{partCode}) P
+		WHERE
+			P.GLOBALCOM = C.COMCODE		
+	</select> -->
+	
+	<select id="getCompanyInfo" parameterType="String" resultType="OrganizationVO">
+		SELECT
+			COMCODE, COMNAME, DESCRIPTION
+		FROM
+			COMTABLE
+		WHERE
+			COMCODE = #{partCode}
+		AND
+			ISDELETED = '0'		
+	</select>
+	
+	<select id="getPartInfo" parameterType="String" resultType="OrganizationVO">
+		SELECT
+			PARTCODE, PARTNAME, DESCRIPTION
+		FROM
+			PARTTABLE
+		WHERE
+			PARENT_PARTCODE = #{partCode}
+		AND
+			ISDELETED = '0'
+	</select>
+	
+	<select id="getPartDatailInfo" parameterType="String" resultType="OrganizationVO">
+		SELECT
+			PARTCODE, PARTNAME,DESCRIPTION
+		FROM
+			PARTTABLE
+		WHERE
+			PARTCODE = #{code}
+	</select>
+	
+	<select id="getEmpInfo" parameterType="String" resultType="OrganizationVO">
+		SELECT 
+			E.EMPCODE, E.EMPNAME,
+			E.EMAIL, E.GLOBALCOM,
+            P.PARTNAME
+		FROM 
+			EMPTABLE E, PARTTABLE P
+		WHERE 
+			E.PARTCODE = #{partCode} 
+		AND 
+			E.ISDELETED = '0' 
+		AND P.PARTCODE = E.PARTCODE
+	</select>
+
+	<select id="getEmpDetailInfo" parameterType="String" resultType="OrganizationVO">
+		SELECT * FROM EMPTABLE WHERE EMPCODE = #{code} AND ISDELETED = '0'
+	</select>
+     
+     <update id="updateEmpInfo" >
+     	UPDATE
+     		EMPTABLE
+     	SET
+     		EMPNAME = #{empName}, EMAIL = #{email},
+     		MSN = #{msn}, NATEON = #{nateOn},
+     		JIKNAME= #{jikName}, MOBILENO = #{mobileNo},
+     		LOCALE = #{locale}, ISADMIN = #{isAdmin}
+     	WHERE
+     		EMPCODE = #{empCode}
+     </update>
+     
+    <select id="selectWholeUserByPartcode" parameterType="String" resultType="RoleMapping">
+        <![CDATA[
+        	SELECT EMP.EMPCODE AS ENDPOINT,
+			  EMP.EMPNAME AS RESOURCENAME
+			FROM EMPTABLE EMP
+			WHERE 1                =1
+			AND EMP.PARTCODE	   =#{partCode}
+			AND EMP.ISDELETED      ='0'
+			ORDER BY EMP.EMPNAME
+        ]]>
+    </select>
+
+    <select id="selectPartListByComCode" parameterType="String" resultType="RoleMapping">
+        <![CDATA[
+        	SELECT PARTNAME AS GROUPNAME,
+        		PARTCODE AS GROUPID,
+        		(CASE WHEN PARENT_PARTCODE is null THEN -1 ELSE TO_NUMBER(PARENT_PARTCODE) END) AS PARENTGROUPID
+			FROM PARTTABLE
+			WHERE 1              =1
+			AND GLOBALCOM        =#{comCode}
+			AND ISDELETED        ='0'
+			ORDER BY PARTCODE
+        ]]>
+    </select>
+
+    <select id="selectRoleListByComCode" parameterType="String" resultType="RoleVO">
+        <![CDATA[
+        	SELECT ROLECODE,
+        		DESCR,
+        		COMCODE
+			FROM ROLETABLE
+			WHERE 1              =1
+			AND COMCODE        =#{comCode}
+			AND ISDELETED        ='0'
+			ORDER BY DESCR
+        ]]>
+    </select>
+     
+</mapper>
